@@ -157,20 +157,50 @@
     function getSelectedTags(){ const typed = filterInput.value.split(',').map(normalizeTag).filter(Boolean); return Array.from(new Set([...activeTagFilters, ...typed])); }
 
     randomBtn.addEventListener('click', ()=>{
-      const filters = getSelectedTags();
-      const mode = modeSelect.value; // 'all' or 'any'
-      let pool = items.slice();
-      if(filters.length){
-        pool = pool.filter(it => {
-          const has = filters.map(f=>it.tags.includes(f));
-          return mode==='all' ? has.every(Boolean) : has.some(Boolean);
-        });
-      }
-      if(pool.length===0){ resultEl.hidden=false; resultEl.innerHTML = '<div style="padding:12px;color:var(--muted)">No Pokémon match that filter.</div>'; return; }
-      const pick = pool[Math.floor(Math.random()*pool.length)];
-      resultEl.hidden=false;
-      resultEl.innerHTML = `<div style="padding:12px"><div style="font-size:18px;font-weight:700">🎉 ${escapeHtml(pick.name)}</div><div class="meta">Tags: ${pick.tags.map(t=>'#'+escapeHtml(t)).join(' ')}</div></div>`;
+
+  // INCLUDE TAGS (existing)
+  const includeFilters = getSelectedTags();
+  const mode = modeSelect.value; // 'all' or 'any'
+
+  // EXCLUDE TAGS (NEW)
+  const excludeInput = document.getElementById('excludeInput'); // <-- new input field in UI
+  const excludeFilters = excludeInput.value
+      .split(',')
+      .map(normalizeTag)
+      .filter(Boolean);
+
+  let pool = items.slice();
+
+  // --- INCLUDE FILTERING ---
+  if(includeFilters.length){
+    pool = pool.filter(it => {
+      const has = includeFilters.map(f => it.tags.includes(f));
+      return mode==='all' ? has.every(Boolean) : has.some(Boolean);
     });
+  }
+
+  // --- EXCLUDE FILTERING (NEW) ---
+  if(excludeFilters.length){
+    pool = pool.filter(it => {
+      return !excludeFilters.some(f => it.tags.includes(f));
+    });
+  }
+
+  // --- FINAL PICK ---
+  if(pool.length === 0){
+    resultEl.hidden = false;
+    resultEl.innerHTML = '<div style="padding:12px;color:var(--muted)">No Pokémon match that filter.</div>';
+    return;
+  }
+
+  const pick = pool[Math.floor(Math.random()*pool.length)];
+  resultEl.hidden = false;
+  resultEl.innerHTML = `
+    <div style="padding:12px">
+      <div style="font-size:18px;font-weight:700">🎉 ${escapeHtml(pick.name)}</div>
+      <div class="meta">Tags: ${pick.tags.map(t=>'#'+escapeHtml(t)).join(' ')}</div>
+    </div>`;
+});
 
     // ---- Import / Export / Clear ----
     document.getElementById('exportBtn').addEventListener('click', ()=>{
