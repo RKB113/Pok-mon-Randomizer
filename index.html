@@ -1,1 +1,273 @@
+<!-- FILE: index.html --><!doctype html>
 
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pokémon Randomizer</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2b6cb0">
+  <style>
+    /* Simple mobile-first styles */
+    :root{--accent:#2b6cb0;--bg:#0f1724;--card:#0b1220;--muted:#9aa4b2}
+    *{box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071024 0%, #071a2b 100%);color:#e6eef6}
+    .app{max-width:980px;margin:0 auto;padding:16px}
+    header{display:flex;gap:12px;align-items:center}
+    header h1{font-size:20px;margin:0}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.06));border-radius:12px;padding:12px;margin-top:12px;box-shadow:0 6px 18px rgba(0,0,0,0.4)}
+    .row{display:flex;gap:8px}
+    input,select,button,textarea{font-size:15px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
+    input::placeholder{color:var(--muted)}
+    .tags{display:flex;flex-wrap:wrap;gap:6px}
+    .tag{padding:6px 8px;border-radius:999px;background:rgba(255,255,255,0.04);cursor:pointer}
+    .tag.active{background:var(--accent);color:#042738}
+    .item-list{max-height:220px;overflow:auto;margin-top:8px}
+    .item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px}
+    .item .meta{font-size:13px;color:var(--muted)}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    .big-btn{padding:10px 14px;border-radius:10px;background:var(--accent);border:none;color:white;font-weight:600}
+    .small-btn{padding:6px 8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.06)}
+    footer{margin-top:14px;font-size:13px;color:var(--muted)}
+    @media(min-width:720px){header h1{font-size:26px}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%232b6cb0'/><text x='12' y='16' font-size='9' text-anchor='middle' fill='white' font-family='Arial'>PK</text></svg>" alt="logo" width="44" height="44">
+      <div>
+        <h1>Pokémon Randomizer</h1>
+        <div style="font-size:13px;color:var(--muted)">Add Pokémon, assign tags, filter, and pick randomly — works offline</div>
+      </div>
+    </header><section class="card" id="editor">
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <input id="name" placeholder="Pokémon name (e.g. Charizard)" style="flex:1" />
+    <input id="tags" placeholder="Tags (comma-separated, e.g. fire,gen1,legendary)" style="flex:1" />
+    <button id="addBtn" class="big-btn">Add / Save</button>
+  </div>
+  <div class="item-list" id="items"></div>
+  <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <div class="controls">
+      <button id="importBtn" class="small-btn">Import JSON</button>
+      <button id="exportBtn" class="small-btn">Export JSON</button>
+      <button id="clearBtn" class="small-btn">Clear All</button>
+    </div>
+    <label style="margin-left:auto;font-size:13px;color:var(--muted)">Mode:
+      <select id="modeSelect" style="margin-left:6px">
+        <option value="all">Match ALL tags</option>
+        <option value="any">Match ANY tag</option>
+      </select>
+    </label>
+  </div>
+</section>
+
+<section class="card" id="filters">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input id="filterInput" placeholder="Filter tags (click tags below or type comma-separated)" style="flex:1">
+    <button id="randomBtn" class="big-btn">🎲 Pick Random</button>
+  </div>
+  <div style="margin-top:10px" class="tags" id="tagCloud"></div>
+  <div style="margin-top:12px" id="result" class="card" hidden></div>
+</section>
+
+<footer>
+  Tip: Add the app to your home screen to run it like an app. Items are stored in your browser (local device only).
+</footer>
+
+  </div>  <script>
+    // ---- Storage & Utilities ----
+    const STORAGE_KEY = 'pkmn_randomizer_items_v1';
+    let items = [];
+
+    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
+    function load(){ const raw = localStorage.getItem(STORAGE_KEY); items = raw ? JSON.parse(raw) : []; }
+    function normalizeTag(t){ return t.trim().toLowerCase(); }
+
+    // ---- Render ----
+    const itemsEl = document.getElementById('items');
+    const tagCloud = document.getElementById('tagCloud');
+    const resultEl = document.getElementById('result');
+
+    function renderItems(){
+      itemsEl.innerHTML = '';
+      if(items.length===0){ itemsEl.innerHTML = '<div style="padding:8px;color:var(--muted)">No Pokémon added yet.</div>'; renderTagCloud(); return; }
+      items.forEach((it, idx)=>{
+        const el = document.createElement('div'); el.className='item';
+        el.innerHTML = `<div>
+          <div style="font-weight:600">${escapeHtml(it.name)}</div>
+          <div class="meta">${it.tags.map(t=>`<span style=\"margin-right:8px\">#${escapeHtml(t)}</span>`).join('')}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button data-idx="${idx}" class="small-btn edit">Edit</button>
+          <button data-idx="${idx}" class="small-btn del">Delete</button>
+        </div>`;
+        itemsEl.appendChild(el);
+      });
+      // attach handlers
+      itemsEl.querySelectorAll('.del').forEach(b=>b.addEventListener('click', e=>{ const i=+e.target.dataset.idx; items.splice(i,1); save(); renderItems(); }));
+      itemsEl.querySelectorAll('.edit').forEach(b=>b.addEventListener('click', e=>{ const i=+e.target.dataset.idx; fillEditor(i); }));
+      renderTagCloud();
+    }
+
+    function renderTagCloud(){
+      const counts = {};
+      items.forEach(it=>it.tags.forEach(t=>counts[t]=(counts[t]||0)+1));
+      const tags = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+      tagCloud.innerHTML = '';
+      tags.forEach(t=>{
+        const btn = document.createElement('button'); btn.className='tag'; btn.textContent = `${t} (${counts[t]})`;
+        btn.dataset.tag = t;
+        btn.addEventListener('click', ()=>{ toggleTagFilter(t); updateFilterInputUI(); });
+        tagCloud.appendChild(btn);
+      });
+      updateFilterInputUI();
+    }
+
+    function updateFilterInputUI(){
+      const selected = getSelectedTags();
+      tagCloud.querySelectorAll('.tag').forEach(btn=>{ btn.classList.toggle('active', selected.includes(btn.dataset.tag)); });
+    }
+
+    // ---- Editor ----
+    const nameInput = document.getElementById('name');
+    const tagsInput = document.getElementById('tags');
+    const addBtn = document.getElementById('addBtn');
+    let editIndex = -1;
+
+    function fillEditor(i){ editIndex = i; const it = items[i]; nameInput.value = it.name; tagsInput.value = it.tags.join(', '); addBtn.textContent = 'Save Changes'; }
+    function clearEditor(){ editIndex=-1; nameInput.value=''; tagsInput.value=''; addBtn.textContent='Add / Save'; }
+
+    addBtn.addEventListener('click', ()=>{
+      const name = nameInput.value.trim();
+      const rawTags = tagsInput.value.split(',').map(normalizeTag).filter(Boolean);
+      if(!name){ alert('Please enter a name.'); return; }
+      const entry = { name, tags: Array.from(new Set(rawTags)) };
+      if(editIndex>=0){ items[editIndex]=entry; } else { items.push(entry); }
+      save(); renderItems(); clearEditor();
+    });
+
+    // ---- Filters & Random ----
+    const filterInput = document.getElementById('filterInput');
+    const randomBtn = document.getElementById('randomBtn');
+    const modeSelect = document.getElementById('modeSelect');
+    let activeTagFilters = [];
+
+    function toggleTagFilter(tag){ if(activeTagFilters.includes(tag)) activeTagFilters = activeTagFilters.filter(t=>t!==tag); else activeTagFilters.push(tag); filterInput.value = activeTagFilters.join(', '); }
+    function getSelectedTags(){ const typed = filterInput.value.split(',').map(normalizeTag).filter(Boolean); return Array.from(new Set([...activeTagFilters, ...typed])); }
+
+    randomBtn.addEventListener('click', ()=>{
+      const filters = getSelectedTags();
+      const mode = modeSelect.value; // 'all' or 'any'
+      let pool = items.slice();
+      if(filters.length){
+        pool = pool.filter(it => {
+          const has = filters.map(f=>it.tags.includes(f));
+          return mode==='all' ? has.every(Boolean) : has.some(Boolean);
+        });
+      }
+      if(pool.length===0){ resultEl.hidden=false; resultEl.innerHTML = '<div style="padding:12px;color:var(--muted)">No Pokémon match that filter.</div>'; return; }
+      const pick = pool[Math.floor(Math.random()*pool.length)];
+      resultEl.hidden=false;
+      resultEl.innerHTML = `<div style="padding:12px"><div style="font-size:18px;font-weight:700">🎉 ${escapeHtml(pick.name)}</div><div class="meta">Tags: ${pick.tags.map(t=>'#'+escapeHtml(t)).join(' ')}</div></div>`;
+    });
+
+    // ---- Import / Export / Clear ----
+    document.getElementById('exportBtn').addEventListener('click', ()=>{
+      const blob = new Blob([JSON.stringify(items,null,2)],{type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'pokemon-randomizer-items.json'; a.click(); URL.revokeObjectURL(url);
+    });
+    document.getElementById('importBtn').addEventListener('click', ()=>{
+      const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json';
+      inp.addEventListener('change', ()=>{
+        const f = inp.files[0]; if(!f) return; const reader = new FileReader();
+        reader.onload = ()=>{ try{ const parsed = JSON.parse(reader.result); if(Array.isArray(parsed)){ items = parsed.map(it=>({name:String(it.name||''), tags:Array.isArray(it.tags)?it.tags.map(normalizeTag):[]})); save(); renderItems(); } else alert('JSON must be an array of items'); }catch(e){alert('Invalid JSON');} }
+        reader.readAsText(f);
+      });
+      inp.click();
+    });
+    document.getElementById('clearBtn').addEventListener('click', ()=>{ if(confirm('Clear all items? This cannot be undone.')){ items=[]; save(); renderItems(); }});
+
+    // ---- Helpers ----
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;" })[c]); }
+
+    // ---- Init ----
+    load(); renderItems();
+
+    // Register service worker
+    if('serviceWorker' in navigator){ navigator.serviceWorker.register('service-worker.js').catch(()=>console.log('SW register failed')); }
+
+    // Allow pressing Enter in input to add
+    [nameInput,tagsInput].forEach(el=>el.addEventListener('keydown', e=>{ if(e.key==='Enter'){ addBtn.click(); } }));
+
+  </script></body>
+</html>/* FILE: manifest.json */ { "name": "Pokémon Randomizer", "short_name": "PK Random", "start_url": ".", "display": "standalone", "background_color": "#071024", "theme_color": "#2b6cb0", "icons": [ { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }, { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" } ] }
+
+// FILE: service-worker.js const CACHE_NAME = 'pk-randomizer-v1'; const ASSETS = [ '.', '/index.html', '/manifest.json' // add icons paths if you host them (e.g. '/icons/icon-192.png') ]; self.addEventListener('install', evt => { evt.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))); self.skipWaiting(); }); self.addEventListener('activate', evt => { evt.waitUntil(clients.claim()); }); self.addEventListener('fetch', evt => { evt.respondWith(caches.match(evt.request).then(res => res || fetch(evt.request).then(fetchRes => { // optionally cache fetched resources return fetchRes; }).catch(() => caches.match('/index.html')))); });
+
+
+---
+
+README / Hosting & Install instructions
+
+Files included in this document (copy them into separate files):
+
+index.html
+
+manifest.json
+
+service-worker.js
+
+(optional) icons/icon-192.png and icons/icon-512.png — replace with your own art
+
+
+Local testing (quick):
+
+1. Create a new folder and save index.html, manifest.json, and service-worker.js there.
+
+
+2. Serve with a static server (recommended) or open index.html directly (some SW features need HTTP/HTTPS).
+
+Easiest: Use npx http-server (Node) or Python: python3 -m http.server 8000.
+
+
+
+3. Open http://localhost:8000 on your phone or desktop.
+
+
+4. To install: in Chrome on Android tap the menu ➜ "Add to Home screen" (or the browser will prompt automatically).
+
+
+
+Free hosting options:
+
+GitHub Pages (push repo with files to gh-pages or main branch and enable pages)
+
+Netlify (drag-and-drop the folder)
+
+Vercel
+
+
+Customization tips:
+
+To add default Pokémon, open the Developer Console (in browser) and run: localStorage.setItem('pkmn_randomizer_items_v1', JSON.stringify([{name:'Pikachu',tags:['electric','gen1']}]))
+
+Replace the inline SVG logo and add icons in /icons/ for a polished look.
+
+
+Privacy & Storage:
+
+All data is stored locally in your browser's localStorage. It never leaves your device unless you explicitly export/import.
+
+
+If you want, I can:
+
+Provide a ready-to-paste GitHub repository structure.
+
+Generate example icons.
+
+Add weighted randomness (rarity), movesets, or region filters specific to Pokémon.
+
+
+Enjoy — open the files and test! If you want, tell me which hosting option you prefer and I will give step-by-step commands for that platform.
